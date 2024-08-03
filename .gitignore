@@ -1,3 +1,9 @@
+# Project Specific
+extracts/
+out/
+lib/
+.env
+
 # Logs
 logs
 *.log

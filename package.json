@@ -1,0 +1,20 @@
+{
+  "name": "taxonomy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "lib/extractFiles.js",
+  "scripts": {
+    "extract": "tsc && node lib/extractFiles.js",
+    "ai": "tsc && node lib/openAI.js"
+  },
+  "author": "",
+  "license": "None",
+  "dependencies": {
+    "openai": "^4.54.0",
+    "typescript": "^5.5.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.1.0"
+  }
+}
