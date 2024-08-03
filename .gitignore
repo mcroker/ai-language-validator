@@ -1,6 +1,7 @@
 # Project Specific
 extracts/
 out/
+working/
 lib/
 .env
 

@@ -4,8 +4,9 @@
   "description": "",
   "main": "lib/extractFiles.js",
   "scripts": {
-    "extract": "tsc && node lib/extractFiles.js",
-    "ai": "tsc && node lib/openAI.js"
+    "extract": "tsc && node --env-file .env lib/index.js extract",
+    "ai": "tsc && node --env-file .env lib/index.js ai",
+    "print": "tsc && node --env-file .env lib/index.js print"
   },
   "author": "",
   "license": "None",

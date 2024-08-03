@@ -1,64 +1,6 @@
-import { writeFile } from 'fs/promises';
 import { readFile, utils } from 'xlsx';
-
-enum h {
-  version = 'Version',
-  changeType = 'ChangeType',
-
-  fileName = 'FileName',
-  propertyName = 'PropertyName',
-
-  componentEn = 'ComponentEn',
-  pathEn = 'PathForEn',
-  existingEn = 'ExistingEn',
-  newEn = 'NewEn',
-  commentsEn = 'CommentsEn',
-
-  componentFr = 'ComponentFr',
-  pathFr = 'PathForFr',
-  existingFr = 'ExistingFr',
-  newFr = 'NewFr',
-  commentsFr = 'CommentsFr'
-}
-
-interface AITranslation {
-  key: number,
-  en: String,
-  fr: String
-}
-
-interface Translation {
-  key?: number,
-  fileName?: string,
-  path?: string,
-  propertyName?: string,
-  component?: string,
-  en?: String,
-  fr?: String
-}
-
-type MapperFn = (x: any) => Translation;
-
-interface FileDef {
-  disabled?: boolean,
-  srcFile: string,
-  outFile: string,
-  sheetName?: string,
-  sheetRows?: number,
-  mapper?: MapperFn,
-  headers?: string[]
-}
-
-function defaultMapper(x: any): Translation {
-  return {
-    fileName: x[h.fileName],
-    path: x[h.pathEn],
-    propertyName: x[h.propertyName],
-    component: x[h.componentEn],
-    en: (x[h.newEn] && String(x[h.newEn]).trim() !== '') ? String(x[h.newEn]).trim() : String(x[h.existingEn]).trim(),
-    fr: (x[h.newFr] && String(x[h.newFr]).trim() !== '') ? String(x[h.newFr]).trim() : String(x[h.existingFr]).trim(),
-  }
-}
+import { ResultStore } from './ResultsStore';
+import { FileDef, h, Entry } from './types';
 
 const TYPE1 = [h.version, h.changeType, h.componentEn, h.fileName, h.propertyName, h.existingEn, h.newEn, h.commentsEn, h.existingFr, h.newFr, h.commentsFr];
 
@@ -75,19 +17,21 @@ const FILES: FileDef[] = [
   { disabled: true, srcFile: '2/Translate_Blob_Extract 2', outFile: 'Blob', headers: TYPE1 },
 ]
 
-export async function getXlsJson(options: FileDef): Promise<any> {
-  const file = await readFile(__dirname + '/../extracts/' + options.srcFile + '.xlsx', { sheetRows: options.sheetRows })
-  const sheetName = (options.sheetName) ? options.sheetName : 'TO BE PROCESSED';
-  const data = utils.sheet_to_json(file.Sheets[sheetName], {
-    header: options.headers
-  })
-  return data
+export async function extractFiles() {
+  const store = new ResultStore()
+  await store.load()
+  await Promise.all(FILES.filter(f => f.disabled !== true).map(f => extractFileData(f).then(txns => store.addEntries(txns))))
+  await Promise.all([store.saveEntries(), store.saveAITranslations()])
 }
 
-export async function extractFileData(options: FileDef): Promise<Translation[]> {
+export async function printHeaders() {
+  await Promise.all(FILES.filter(f => f.disabled === false).map(printHeader))
+}
+
+async function extractFileData(options: FileDef): Promise<(Omit<Entry, "key">)[]> {
   const data = await getXlsJson(options)
   const mapper = (options.mapper) ? options.mapper : defaultMapper;
-  const result: Translation[] = []
+  const result: (Omit<Entry, "key">)[] = []
   for (const x of data as any) {
     const row = mapper(x);
     if (!(x['Version'] == 'DO NOT EDIT' || x['Version'] == 'Version')) {
@@ -97,7 +41,29 @@ export async function extractFileData(options: FileDef): Promise<Translation[]> 
   return result
 }
 
-export async function printHeader(options: FileDef): Promise<void> {
+function defaultMapper(x: any): Omit<Entry, "key"> {
+  return {
+    fileName: x[h.fileName],
+    path: x[h.pathEn],
+    propertyName: x[h.propertyName],
+    component: x[h.componentEn],
+    en: (x[h.newEn] && String(x[h.newEn]).trim() !== '') ? String(x[h.newEn]).trim().toString() : String(x[h.existingEn]).trim().toString(),
+    fr: (x[h.newFr] && String(x[h.newFr]).trim() !== '') ? String(x[h.newFr]).trim().toString() : String(x[h.existingFr]).trim().toString(),
+  }
+}
+
+
+async function getXlsJson(options: FileDef): Promise<any> {
+  const file = await readFile(__dirname + '/../extracts/' + options.srcFile + '.xlsx', { sheetRows: options.sheetRows })
+  const sheetName = (options.sheetName) ? options.sheetName : 'TO BE PROCESSED';
+  const data = utils.sheet_to_json(file.Sheets[sheetName], {
+    header: options.headers
+  })
+  return data
+}
+
+
+async function printHeader(options: FileDef): Promise<void> {
   const data = await getXlsJson({ ...options, sheetRows: 2 })
   for (const x of data as any) {
     if (x['Version'] == 'Version') {
@@ -109,43 +75,3 @@ export async function printHeader(options: FileDef): Promise<void> {
     }
   }
 }
-
-export async function saveFile(options: FileDef) {
-  await writeFile(__dirname + '/../out/' + options.outFile + '.json', JSON.stringify(await extractFileData(options)))
-}
-
-export function isGoodTranslation(txn: Translation): txn is Translation & AITranslation {
-  if (typeof txn.key !== 'number') return false
-  if (txn.en === undefined || txn.fr === undefined || txn.en.length === 0 || txn.fr.length === 0) return false
-  const fr = txn.fr.toLowerCase()
-  return fr !== 'undefined' && fr.substring(fr.length - 3) !== '_fr'
-}
-
-export async function saveFiles() {
-  await Promise.all(FILES.filter(f => f.disabled === false).map(saveFile))
-}
-
-export async function printHeaders() {
-  await Promise.all(FILES.filter(f => f.disabled === false).map(printHeader))
-}
-
-export async function combineTxns() {
-  const store = new Map<string, any>()
-  await Promise.all(FILES.filter(f => f.disabled !== true).map(f => extractFileData(f).then((txns => txns.forEach(txn => store.set(`${txn.fileName}-${txn.propertyName}`, txn))))))
-
-  const entries: Translation[] = Array.from(store.values()).map((v, i) => ({ ...v, key: i }))
-
-  await Promise.all([
-    writeFile(__dirname + '/../out/entries.json', JSON.stringify(entries), "utf8"),
-    writeFile(__dirname + '/../out/translations.json', JSON.stringify(entries.filter(isGoodTranslation).map(e => ({ key: e.key, en: e.en, fr: e.fr }))), "utf8")
-  ])
-}
-
-
-
-(async () => {
-  // saveFiles
-  // printHeaders
-  // combineTxns
- await combineTxns()
-})()
